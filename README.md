@@ -10,7 +10,7 @@
 
 **Клон данных на ПК**
 ```powershell
-git clone https://github.com/winsert1/Smart-physic-teacher
+git clone https://github.com/winsert1/Smart-physic-teacher.git
 ```
 
 **Выдача разрешений компилятору**
