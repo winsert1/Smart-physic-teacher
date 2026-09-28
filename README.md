@@ -33,7 +33,7 @@ venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### 5.1 Настройка .env: введите API_KEY из Google AI Studio и Telegram бота (на тест обращаться в тг: @evgenn1y)
+### Настройка .env: введите API_KEY из Google AI Studio и Telegram бота (на тест обращаться в тг: @evgenn1y)
 
 **Запуск ПО**
 ```powershell
