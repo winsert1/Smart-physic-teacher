@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Виртуальный Учитель (Голосовой Режим)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
+        .container { text-align: center; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 80%; max-width: 500px; }
+        h1 { color: #333; }
+        .btn { padding: 15px 30px; font-size: 18px; border: none; border-radius: 50px; cursor: pointer; transition: 0.3s; margin: 10px; font-weight: bold; }
+        .btn-start { background-color: #4CAF50; color: white; }
+        .btn-start:hover { background-color: #45a049; }
+        .btn-record { background-color: #2196F3; color: white; display: none; }
+        .btn-record.recording { background-color: #f44336; animation: pulse 1.5s infinite; }
+        .status { margin-top: 20px; color: #666; font-size: 16px; min-height: 24px; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Виртуальный Учитель</h1>
+        <p>Нажмите "Начать занятие", чтобы учитель задал первый вопрос.</p>
+        
+        <button id="startBtn" class="btn btn-start">Начать занятие</button>
+        <button id="recordBtn" class="btn btn-record">Удерживайте, чтобы говорить</button>
+        
+        <div class="status" id="statusText">Ожидание...</div>
+        <audio id="audioPlayer" controls style="display:none;"></audio>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const statusText = document.getElementById('statusText');
+        const audioPlayer = document.getElementById('audioPlayer');
+        
+        let mediaRecorder;
+        let audioChunks = [];
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('user_id') || "guest";
+        
+        async function syncState() {
+            try {
+                const res = await fetch(`/sync_state?user_id=${userId}`);
+                const data = await res.json();
+                if (data.status === "needs_drawing") {
+                    statusText.innerHTML = `<span style="color:red">${data.message}</span>`;
+                    startBtn.style.display = 'none';
+                    recordBtn.style.display = 'none';
+                    return true;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+            return false;
+        }
+
+        // Check state on load
+        window.onload = syncState;
+
+        startBtn.addEventListener('click', async () => {
+            if (await syncState()) return;
+            
+            statusText.innerText = 'Подключение...';
+            startBtn.disabled = true;
+            try {
+                const res = await fetch(`/start_call?user_id=${userId}`, { method: 'POST' });
+                const blob = await res.blob();
+                playAudio(blob);
+                startBtn.style.display = 'none';
+                recordBtn.style.display = 'inline-block';
+                statusText.innerText = 'Учитель говорит...';
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    statusText.innerText = 'Учитель думает...';
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    audioChunks = [];
+                    
+                    const formData = new FormData();
+                    formData.append("audio", audioBlob, "answer.webm");
+                    
+                    const response = await fetch(`/upload_audio?user_id=${userId}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const responseBlob = await response.blob();
+                    playAudio(responseBlob);
+                    
+                    // Re-sync state after teacher replies
+                    setTimeout(syncState, 2000);
+                };
+                
+            } catch (e) {
+                statusText.innerText = 'Ошибка подключения!';
+                startBtn.disabled = false;
+            }
+        });
+
+        recordBtn.addEventListener('mousedown', async () => {
+            if (await syncState()) return; // block recording if drawing needed
+            if (mediaRecorder && mediaRecorder.state === 'inactive') {
+                audioPlayer.pause(); 
+                mediaRecorder.start();
+                recordBtn.classList.add('recording');
+                recordBtn.innerText = 'Идёт запись... Отпустите для отправки';
+                statusText.innerText = 'Вы говорите...';
+            }
+        });
+
+        recordBtn.addEventListener('mouseup', () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                recordBtn.classList.remove('recording');
+                recordBtn.innerText = 'Удерживайте, чтобы говорить';
+            }
+        });
+        
+        // Touch events for mobile
+        recordBtn.addEventListener('touchstart', (e) => { e.preventDefault(); recordBtn.dispatchEvent(new Event('mousedown')); });
+        recordBtn.addEventListener('touchend', (e) => { e.preventDefault(); recordBtn.dispatchEvent(new Event('mouseup')); });
+
+        function playAudio(blob) {
+            const url = URL.createObjectURL(blob);
+            audioPlayer.src = url;
+            audioPlayer.play();
+            audioPlayer.onended = () => {
+                statusText.innerText = 'Ваша очередь. Удерживайте кнопку, чтобы ответить.';
+            };
+        }
+    </script>
+</body>
+</html>

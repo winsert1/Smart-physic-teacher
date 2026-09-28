@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Environment variables & secrets
+.env
+*.bak
+*.zip
+images_tmp/
+
+# Session logs and temporary files
+student_session_answers_*.txt
+*.tmp
+
+# Office temp files
+~$*.docx
+
+# IDE / Editor
+.idea/
+.vscode/
