@@ -18,6 +18,13 @@ git clone https://github.com/winsert1/Smart-physic-teacher
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 ```
 
+** Создание файла .env **
+**Получите Google AI Studio и Telegram бота (на тест в тг: @evgenn1y), формат сохранения:**
+```powershell
+Gemini_API_KEY='AIzaSyAx***'
+TGBOT_API_KEY='88610329****'
+```
+
 **Создание виртуального окружения**
 ```powershell
 cd agent
@@ -35,8 +42,6 @@ venv\Scripts\Activate.ps1
 ```powershell
 pip install -r requirements.txt
 ```
-
-### Настройка .env: введите API_KEY из Google AI Studio и Telegram бота (на тест обращаться в тг: @evgenn1y)
 
 **Запуск ПО**
 ```powershell
