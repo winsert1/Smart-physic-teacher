@@ -20,6 +20,9 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 
 **Создание виртуального окружения**
 ```powershell
+cd agent
+```
+```powershell
 python.exe -m venv venv
 ```
 
