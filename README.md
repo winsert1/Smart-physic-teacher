@@ -6,11 +6,11 @@
 1.3 Оценка ответа ученика.
 1.4 Генерация новых учебных сценариев.
 
-### 0.1 Запуск PowerShell от им. Администратора
+### Инструкция по запуску PowerShell, от им. Администратора
 
 **Клон данных на ПК**
 ```powershell
-git clone <repository-url>
+git clone https://github.com/winsert1/Smart-physic-teacher
 ```
 
 **Выдача разрешений компилятору**
