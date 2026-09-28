@@ -32,7 +32,7 @@ GEMINI_API_KEY = os.getenv('Gemini_API_KEY')
 TGBOT_API_KEY = os.getenv('TGBOT_API_KEY')
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
-PRIMARY_MODELS = ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash']
+PRIMARY_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash']
 
 bot = Bot(token=TGBOT_API_KEY)
 dp = Dispatcher(storage=MemoryStorage())
