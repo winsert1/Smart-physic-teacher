@@ -23,7 +23,7 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 GEMINI_API_KEY = os.getenv('Gemini_API_KEY')
 TGBOT_API_KEY = os.getenv('TGBOT_API_KEY')
 
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+ai_client = genai.Client(api_key=GEMINI_API_KEY, http_options={'retry_options': {'attempts': 1}})
 PRIMARY_MODELS = ['gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash']
 
 bot = Bot(token=TGBOT_API_KEY)
@@ -241,6 +241,15 @@ def extract_grade(llm_reply):
         return grade, reply_text
     return 'А', clean
 
+def calculate_final_score(grades):
+    mapping = {'А': 5, 'Б': 4, 'В': 3, 'Г': 2, 'Д': 2}
+    numeric_grades = [mapping[g] for g in grades if g in mapping]
+    if not numeric_grades:
+        return 0.0, 0
+    avg = sum(numeric_grades) / len(numeric_grades)
+    rounded = int(avg + 0.5)
+    return avg, rounded
+
 async def process_generator_step(chat_id, state: FSMContext):
     data = await state.get_data()
     topic = data.get("generate_topic", "")
@@ -373,6 +382,7 @@ async def handle_answer(message: types.Message, state: FSMContext):
         reply_text = matched_typical_msg
         await message.answer(reply_text)
         save_session_log(user_id, teacher_q, ans_label, grade, reply_text)
+        session["grades"].append(grade)
         return
 
     # 2. Стандартный кумулятивный анализ через Gemini
@@ -413,12 +423,12 @@ async def handle_answer(message: types.Message, state: FSMContext):
     await message.answer(reply_text)
     save_session_log(user_id, teacher_q, ans_label, grade, reply_text)
     
+    grades.append(grade)
+    
     if grade in ['В', 'Г', 'Д']:
         # В, Г, Д - stay on current question, student must clarify/fix
-        pass
+        await state.update_data(grades=grades)
     else:
-        grades.append(grade)
-        
         # Lookahead logic: loop to find the next non-redundant question
         next_q_idx = current_q_idx + 1
         while next_q_idx < len(questions):
@@ -427,6 +437,7 @@ async def handle_answer(message: types.Message, state: FSMContext):
             if is_redundant:
                 logging.info(f"Skipping redundant question: {next_q['teacher']}")
                 save_session_log(user_id, next_q["teacher"], "<ПРОПУЩЕН КАК ДУБЛИКАТ>", "А", "<Автоматический пропуск>")
+                grades.append("А")
                 next_q_idx += 1
             else:
                 break
@@ -437,10 +448,12 @@ async def handle_answer(message: types.Message, state: FSMContext):
             next_q = questions[next_q_idx]
             await send_teacher_question(message.chat.id, next_q["teacher"])
         else:
+            avg, rounded = calculate_final_score(grades)
             if 'В' in grades or 'Г' in grades or 'Д' in grades:
-                await message.answer("Поздравляю, исследование завершено! Мы разобрали все сложные моменты. Молодец!")
+                msg = f"Поздравляю, исследование завершено! Мы разобрали все сложные моменты. Молодец!\n\nКоличественная оценка: {avg:.2f}\nИтоговая оценка: {rounded}"
             else:
-                await message.answer("Поздравляю, исследование успешно завершено! Ты показал отличные результаты и глубокое понимание темы.")
+                msg = f"Поздравляю, исследование успешно завершено! Ты показал отличные результаты и глубокое понимание темы.\n\nКоличественная оценка: {avg:.2f}\nИтоговая оценка: {rounded}"
+            await message.answer(msg)
             await state.clear()
 
 async def main():

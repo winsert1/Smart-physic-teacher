@@ -14,7 +14,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 GEMINI_API_KEY = os.getenv('Gemini_API_KEY')
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+ai_client = genai.Client(api_key=GEMINI_API_KEY, http_options={'retry_options': {'attempts': 1}})
 PRIMARY_MODELS = ['gemini-3.5-flash', 'gemini-3.8-flash']
 
 app = FastAPI()
@@ -145,9 +145,22 @@ async def upload_audio(audio: UploadFile = File(...), user_id: str = "guest"):
             if len(parts) > 1 and len(parts[0]) <= 2:
                 reply_text = parts[1].strip()
 
+def calculate_final_score(grades):
+    mapping = {'А': 5, 'Б': 4, 'В': 3, 'Г': 2, 'Д': 2}
+    numeric_grades = [mapping[g] for g in grades if g in mapping]
+    if not numeric_grades:
+        return 0.0, 0
+    avg = sum(numeric_grades) / len(numeric_grades)
+    rounded = int(avg + 0.5)
+    return avg, rounded
+
     full_reply = reply_text
     
     # Progress logic
+    if "grades" not in session:
+        session["grades"] = []
+    session["grades"].append(grade)
+    
     if grade in ['В', 'Г', 'Д']:
         # Stay on current
         pass
@@ -161,7 +174,8 @@ async def upload_audio(audio: UploadFile = File(...), user_id: str = "guest"):
             next_q = questions[next_q_idx]
             full_reply += " " + next_q["teacher"]
         else:
-            full_reply += " Поздравляю, исследование успешно завершено!"
+            avg, rounded = calculate_final_score(session["grades"])
+            full_reply += f" Поздравляю, исследование успешно завершено! Количественная оценка: {avg:.2f}. Итоговая оценка: {rounded}."
 
     # TTS
     tts = gTTS(text=full_reply, lang='ru')

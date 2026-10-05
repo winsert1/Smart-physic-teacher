@@ -31,8 +31,8 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 GEMINI_API_KEY = os.getenv('Gemini_API_KEY')
 TGBOT_API_KEY = os.getenv('TGBOT_API_KEY')
 
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
-PRIMARY_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash']
+ai_client = genai.Client(api_key=GEMINI_API_KEY, http_options={'retry_options': {'attempts': 1}})
+PRIMARY_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']
 
 bot = Bot(token=TGBOT_API_KEY)
 dp = Dispatcher(storage=MemoryStorage())
@@ -252,6 +252,15 @@ def extract_grade(llm_reply):
         return grade, reply_text
     return 'А', clean
 
+def calculate_final_score(grades):
+    mapping = {'А': 5, 'Б': 4, 'В': 3, 'Г': 2, 'Д': 2}
+    numeric_grades = [mapping[g] for g in grades if g in mapping]
+    if not numeric_grades:
+        return 0.0, 0
+    avg = sum(numeric_grades) / len(numeric_grades)
+    rounded = int(avg + 0.5)
+    return avg, rounded
+
 async def process_generator_step(user_id, chat_id):
     session = get_session(user_id)
     topic = session["topic"]
@@ -394,6 +403,7 @@ async def handle_tg_message(message: types.Message):
         reply_text = matched_typical_msg
         await message.answer(reply_text)
         save_session_log(user_id, teacher_q, ans_label, grade, reply_text)
+        session["grades"].append(grade)
         return
 
     # 2. Стандартная кумулятивная проверка через Gemini
@@ -434,13 +444,15 @@ async def handle_tg_message(message: types.Message):
     await message.answer(reply_text)
     save_session_log(user_id, teacher_q, ans_label, grade, reply_text)
     
+    session["grades"].append(grade)
+    
     if grade not in ['В', 'Г', 'Д']:
-        session["grades"].append(grade)
         next_q_idx = current_q_idx + 1
         while next_q_idx < len(questions):
             next_q = questions[next_q_idx]
             if await check_redundancy(user_id, next_q["teacher"]):
                 save_session_log(user_id, next_q["teacher"], "<ПРОПУСК КАК ДУБЛИКАТ>", "А", "<Автоматический пропуск>")
+                session["grades"].append("А")
                 next_q_idx += 1
             else: break
         
@@ -451,7 +463,10 @@ async def handle_tg_message(message: types.Message):
             markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎙 Голосовой звонок", url=f"http://127.0.0.1:8000/?user_id={user_id}")]])
             await send_teacher_question(message.chat.id, questions[next_q_idx]["teacher"], reply_markup=markup)
         else:
-            await message.answer("Поздравляю, исследование успешно завершено!")
+            avg, rounded = calculate_final_score(session["grades"])
+            final_msg = f"Поздравляю, исследование успешно завершено!\n\nКоличественная оценка: {avg:.2f}\nИтоговая оценка: {rounded}"
+            await message.answer(final_msg)
+            sessions.pop(user_id, None)
 
 # ===================== FASTAPI WEB =====================
 @app.get("/", response_class=HTMLResponse)
@@ -516,6 +531,7 @@ async def upload_audio(audio: UploadFile = File(...), user_id: str = "guest"):
         grade = 'В'
         reply_text = matched_typical_msg
         save_session_log(user_id, teacher_q, "<Голос web>", grade, reply_text)
+        session["grades"].append(grade)
         tts = gTTS(text=reply_text, lang='ru')
         audio_io = io.BytesIO()
         tts.write_to_fp(audio_io)
@@ -555,13 +571,15 @@ async def upload_audio(audio: UploadFile = File(...), user_id: str = "guest"):
     full_reply = reply_text
     save_session_log(user_id, teacher_q, "<Голос web>", grade, reply_text)
     
+    session["grades"].append(grade)
+    
     if grade not in ['В', 'Г', 'Д']:
-        session["grades"].append(grade)
         next_q_idx = current_q_idx + 1
         while next_q_idx < len(questions):
             next_q = questions[next_q_idx]
             if await check_redundancy(user_id, next_q["teacher"]):
                 save_session_log(user_id, next_q["teacher"], "<ПРОПУСК КАК ДУБЛИКАТ>", "А", "<Автоматический пропуск>")
+                session["grades"].append("А")
                 next_q_idx += 1
             else: break
             
@@ -579,7 +597,9 @@ async def upload_audio(audio: UploadFile = File(...), user_id: str = "guest"):
                     full_reply += " Я отправил изображение к заданию в наш Telegram-чат, посмотри его."
                     asyncio.create_task(send_teacher_question(user_id, next_q['teacher']))
         else:
-            full_reply += " Поздравляю, исследование успешно завершено!"
+            avg, rounded = calculate_final_score(session["grades"])
+            full_reply += f" Поздравляю, исследование успешно завершено! Количественная оценка: {avg:.2f}. Итоговая оценка: {rounded}."
+            sessions.pop(user_id, None)
 
     tts = gTTS(text=full_reply, lang='ru')
     audio_io = io.BytesIO()
